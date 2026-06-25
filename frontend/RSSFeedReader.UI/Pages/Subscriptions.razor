@@ -1,0 +1,108 @@
+@page "/subscriptions"
+@inject RSSFeedReader.UI.Services.SubscriptionApiClient ApiClient
+
+<PageTitle>Assinaturas</PageTitle>
+
+<h1>Assinaturas de Feed</h1>
+
+<div class="mb-3">
+    <label for="feedUrl" class="form-label">URL do feed</label>
+    <input id="feedUrl" class="form-control" @bind="newSubscriptionUrl" placeholder="https://example.com/feed.xml" />
+    <div class="form-text">Cole a URL do feed RSS/Atom e clique em adicionar.</div>
+</div>
+
+<button class="btn btn-primary mb-3" @onclick="AddSubscription" disabled="@isBusy">Adicionar assinatura</button>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">@errorMessage</div>
+}
+
+@if (subscriptions == null)
+{
+    <p>Carregando assinaturas...</p>
+}
+else if (!subscriptions.Any())
+{
+    <div class="alert alert-secondary">Nenhuma assinatura adicionada ainda.</div>
+}
+else
+{
+    <ul class="list-group">
+        @foreach (var subscription in subscriptions)
+        {
+            <li class="list-group-item">@subscription.Url</li>
+        }
+    </ul>
+}
+
+@code {
+    private List<RSSFeedReader.UI.Models.SubscriptionModel>? subscriptions;
+    private string newSubscriptionUrl = string.Empty;
+    private string errorMessage = string.Empty;
+    private bool isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSubscriptionsAsync();
+    }
+
+    private async Task LoadSubscriptionsAsync()
+    {
+        errorMessage = string.Empty;
+        try
+        {
+            subscriptions = await ApiClient.GetSubscriptionsAsync();
+        }
+        catch
+        {
+            errorMessage = "Falha ao carregar as assinaturas.";
+        }
+    }
+
+    private async Task AddSubscription()
+    {
+        errorMessage = string.Empty;
+        if (string.IsNullOrWhiteSpace(newSubscriptionUrl))
+        {
+            errorMessage = "Informe uma URL de feed.";
+            return;
+        }
+
+        if (!Uri.TryCreate(newSubscriptionUrl.Trim(), UriKind.Absolute, out var uriResult) || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
+        {
+            errorMessage = "A URL informada não é válida.";
+            return;
+        }
+
+        isBusy = true;
+        try
+        {
+            var request = new RSSFeedReader.UI.Models.SubscriptionCreateRequestModel { Url = newSubscriptionUrl.Trim() };
+            var response = await ApiClient.AddSubscriptionAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                newSubscriptionUrl = string.Empty;
+                await LoadSubscriptionsAsync();
+            }
+            else
+            {
+                var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+                errorMessage = error?.Error ?? "Erro ao adicionar assinatura.";
+            }
+        }
+        catch
+        {
+            errorMessage = "Erro ao enviar a solicitação.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private class ErrorResponse
+    {
+        public string Error { get; set; } = string.Empty;
+    }
+}
